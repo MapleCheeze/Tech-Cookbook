@@ -1,0 +1,366 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_DeviceTagging_name": {
+            "defaultValue": "DeviceTagging",
+            "type": "String"
+        },
+        "connections_wdatp_1_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/wdatp-1",
+            "type": "String"
+        },
+        "connections_office365users_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/office365users",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_DeviceTagging_name')]",
+            "location": "northcentralus",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "interval": 1,
+                                "frequency": "Week",
+                                "timeZone": "Eastern Standard Time",
+                                "schedule": {
+                                    "weekDays": [
+                                        "Friday",
+                                        "Sunday"
+                                    ],
+                                    "hours": [
+                                        12
+                                    ]
+                                }
+                            },
+                            "evaluatedRecurrence": {
+                                "interval": 1,
+                                "frequency": "Week",
+                                "timeZone": "Eastern Standard Time",
+                                "schedule": {
+                                    "weekDays": [
+                                        "Friday",
+                                        "Sunday"
+                                    ],
+                                    "hours": [
+                                        12
+                                    ]
+                                }
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "Query": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": {
+                                    "Query": "// === Device Tagging KQL Template ===\n// Identifies the primary user of each managed Windows device by combining\n// recent logon history (DeviceLogonEvents) with current device state (DeviceInfo).\n// The downstream Logic App uses PrimaryUser to look up the user's department\n// in Entra ID and apply it as a Microsoft Defender for Endpoint device tag.\n//\n// Add filters appropriate to your environment (service accounts, shared devices,\n// non-user device patterns, etc.) before deploying.\n\n// Step 1: Most-frequent interactive logon user per device over the last 30 days.\nlet MostLoggedInUser =\nDeviceLogonEvents\n| where Timestamp > ago(30d)\n| where ActionType == \"LogonSuccess\"\n| where LogonType contains \"Interactive\"\n| where AccountDomain != \"\"\n| summarize LogonCount = count() by DeviceId, DeviceName, AccountName\n| summarize arg_max(LogonCount, AccountName) by DeviceId, DeviceName\n| project DeviceId, DeviceName, MostLoggedInUser = AccountName;\n\n// Step 2: Active managed devices seen in the last 7 days, with their logged-on users.\nlet DeviceDetails =\nDeviceInfo\n| where OSPlatform in (\"Windows10\", \"Windows11\")\n| where SensorHealthState == \"Active\"\n| where OnboardingStatus == \"Onboarded\"\n| where JoinType != \"\" and JoinType != \"AAD Registered\"\n| where LoggedOnUsers != @\"[]\"\n| extend ParsedLoggedOnUsers = parse_json(LoggedOnUsers)\n| mv-expand UserRecord = ParsedLoggedOnUsers\n| project DeviceId, DeviceName, LoggedUser = tostring(UserRecord.UserName), Timestamp\n| summarize AllUserNames = make_set(LoggedUser), LastSeen = max(Timestamp) by DeviceId, DeviceName\n| where LastSeen > ago(7d);\n\n// Step 3: Join the two sets and resolve the primary user per device.\nDeviceDetails\n| join kind=leftouter (MostLoggedInUser) on DeviceId, DeviceName\n| extend UserCount = array_length(AllUserNames)\n| where UserCount < 3\n| extend PrimaryUser = iif(isempty(MostLoggedInUser) or MostLoggedInUser == \"\", tostring(AllUserNames[0]), MostLoggedInUser)\n| project DeviceId, DeviceName, PrimaryUser, LastSeen, AllUserNames, UserCount"
+                                },
+                                "path": "/api/advancedqueries/run"
+                            }
+                        },
+                        "Apply_to_each": {
+                            "foreach": "@body('Query')?['Results']",
+                            "actions": {
+                                "Get_user_profile_(V2)": {
+                                    "runAfter": {
+                                        "UPN_Add": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['office365users']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/codeless/v1.0/users/@{encodeURIComponent(outputs('UPN_Add'))}",
+                                        "retryPolicy": {
+                                            "type": "fixed",
+                                            "count": 30,
+                                            "interval": "PT60S"
+                                        }
+                                    }
+                                },
+                                "UPN_Add": {
+                                    "type": "Compose",
+                                    "inputs": "@concat(items('Apply_to_each')?['PrimaryUser'], '@<DOMAIN.COM>')"
+                                },
+                                "Condition_2": {
+                                    "actions": {
+                                        "Scope": {
+                                            "actions": {
+                                                "Get_Device_Info": {
+                                                    "type": "ApiConnection",
+                                                    "inputs": {
+                                                        "host": {
+                                                            "connection": {
+                                                                "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                                                            }
+                                                        },
+                                                        "method": "get",
+                                                        "path": "/api/machines/@{encodeURIComponent(items('Apply_to_each')?['DeviceId'])}",
+                                                        "retryPolicy": {
+                                                            "type": "fixed",
+                                                            "count": 6,
+                                                            "interval": "PT60S"
+                                                        }
+                                                    }
+                                                },
+                                                "Filter_array_Dept_Tags": {
+                                                    "runAfter": {
+                                                        "Get_Device_Info": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "Query",
+                                                    "inputs": {
+                                                        "from": "@body('Get_Device_Info')?['machineTags']",
+                                                        "where": "@contains(item(),'BU')"
+                                                    }
+                                                },
+                                                "For_each_1": {
+                                                    "foreach": "@outputs('Filter_array_Dept_Tags')['body']",
+                                                    "actions": {
+                                                        "Device_Tags": {
+                                                            "type": "SetVariable",
+                                                            "inputs": {
+                                                                "name": "Machine Tags",
+                                                                "value": "@items('For_each_1')"
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "Filter_array_Dept_Tags": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "Foreach"
+                                                },
+                                                "Expected_Dept_Tag": {
+                                                    "runAfter": {
+                                                        "For_each_1": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "type": "Compose",
+                                                    "inputs": "@body('Get_user_profile_(V2)')?['department']"
+                                                }
+                                            },
+                                            "type": "Scope"
+                                        },
+                                        "Condition": {
+                                            "actions": {
+                                                "Condition_1": {
+                                                    "actions": {
+                                                        "Add_Tag": {
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "post",
+                                                                "body": {
+                                                                    "Value": "@{outputs('Expected_Dept_Tag')}",
+                                                                    "Action": "Add"
+                                                                },
+                                                                "path": "/api/machines/@{encodeURIComponent(body('Get_Device_Info')?['id'])}/tags"
+                                                            }
+                                                        }
+                                                    },
+                                                    "else": {
+                                                        "actions": {}
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "equals": [
+                                                                    "@ not(contains(variables('Machine Tags'), 'Expected Dept Tag'))",
+                                                                    ""
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": "If"
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Scope": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Correct_Tag": {
+                                                        "runAfter": {
+                                                            "Tag_Removal_": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": {
+                                                                "Value": "@{outputs('Expected_Dept_Tag')}",
+                                                                "Action": "Add"
+                                                            },
+                                                            "path": "/api/machines/@{encodeURIComponent(body('Tag_Removal_')?['id'])}/tags",
+                                                            "retryPolicy": {
+                                                                "type": "fixed",
+                                                                "count": 6,
+                                                                "interval": "PT60S"
+                                                            }
+                                                        }
+                                                    },
+                                                    "Tag_Removal_": {
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": {
+                                                                "Value": "@variables('Machine Tags')",
+                                                                "Action": "Remove"
+                                                            },
+                                                            "path": "/api/machines/@{encodeURIComponent(body('Get_Device_Info')?['id'])}/tags",
+                                                            "retryPolicy": {
+                                                                "type": "fixed",
+                                                                "count": 6,
+                                                                "interval": "PT60S"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "equals": [
+                                                            "@equals(variables('Machine Tags'), outputs('Expected_Dept_Tag'))\r\n",
+                                                            ""
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If"
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "Get_user_profile_(V2)": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "else": {
+                                        "actions": {}
+                                    },
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "equals": [
+                                                    "@body('Get_user_profile_(V2)')?['accountEnabled']",
+                                                    true
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_variables": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Initialize_variables": {
+                            "runAfter": {
+                                "Query": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "Machine Tags",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Terminate": {
+                            "runAfter": {
+                                "Apply_to_each": [
+                                    "Succeeded",
+                                    "TimedOut",
+                                    "Skipped",
+                                    "Failed"
+                                ]
+                            },
+                            "type": "Terminate",
+                            "inputs": {
+                                "runStatus": "Succeeded"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "wdatp-1": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/northcentralus/managedApis/wdatp",
+                                "connectionId": "[parameters('connections_wdatp_1_externalid')]",
+                                "connectionName": "wdatp-1",
+                                "connectionProperties": {}
+                            },
+                            "office365users": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/northcentralus/managedApis/office365users",
+                                "connectionId": "[parameters('connections_office365users_externalid')]",
+                                "connectionName": "office365users",
+                                "connectionProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

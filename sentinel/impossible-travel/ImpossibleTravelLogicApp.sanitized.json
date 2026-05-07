@@ -1,0 +1,1018 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "connections_azuresentinel_1_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/azuresentinel-1",
+            "type": "String"
+        },
+        "connections_office365users_1_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/office365users-1",
+            "type": "String"
+        },
+        "connections_azuresentinel_5_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/azuresentinel-5",
+            "type": "String"
+        },
+        "connections_office365_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/office365",
+            "type": "String"
+        },
+        "connections_teams_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/teams",
+            "type": "String"
+        },
+        "workflows_Impossible_Travel_Playbook_name": {
+            "defaultValue": "Impossible Travel Playbook",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_Impossible_Travel_Playbook_name')]",
+            "location": "centralus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@listCallbackUrl()"
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Get_manager_(V2)": {
+                            "runAfter": {
+                                "Exclusion": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['office365users']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/codeless/v1.0/users/@{encodeURIComponent(body('Get_user_profile_(V2)')?['mail'])}/manager"
+                            }
+                        },
+                        "Entities_-_Get_Accounts": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                                "path": "/entities/account"
+                            }
+                        },
+                        "Exclusion": {
+                            "actions": {
+                                "Terminate": {
+                                    "runAfter": {
+                                        "Update_incident": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runStatus": "Succeeded"
+                                    }
+                                },
+                                "Update_incident": {
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                            }
+                                        },
+                                        "method": "put",
+                                        "body": {
+                                            "incidentArmId": "@triggerBody()?['object']?['id']",
+                                            "tagsToAdd": {
+                                                "TagsToAdd": [
+                                                    {
+                                                        "Tag": "IPTV3 Automation - Excluded "
+                                                    }
+                                                ]
+                                            },
+                                            "status": "Closed",
+                                            "classification": {
+                                                "ClassificationAndReason": "BenignPositive - SuspiciousButExpected",
+                                                "ClassificationReasonText": "This user was excluded due to being notified of their travel. "
+                                            }
+                                        },
+                                        "path": "/Incidents"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Get_user_profile_(V2)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {}
+                            },
+                            "expression": {
+                                "or": [
+                                    {
+                                        "equals": [
+                                            "@body('Get_user_profile_(V2)')?['displayName']",
+                                            ""
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Get_user_profile_(V2)": {
+                            "runAfter": {
+                                "Description": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['office365users']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/codeless/v1.0/users/@{encodeURIComponent(outputs('Compromised_User'))}"
+                            }
+                        },
+                        "Get_Automatic_Replies_": {
+                            "runAfter": {
+                                "Get_mail_tips_for_a_mailbox_(V2)": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@outputs('Get_mail_tips_for_a_mailbox_(V2)')?['body']?['value']?[0]?['automaticReplies']"
+                        },
+                        "Get_mail_tips_for_a_mailbox_(V2)": {
+                            "runAfter": {
+                                "Get_manager_(V2)": [
+                                    "Succeeded",
+                                    "Failed"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['office365']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": {
+                                    "MailTipsOptions": "automaticReplies, deliveryRestriction, externalMemberCount, mailboxFullStatus, maxMessageSize, moderationStatus, totalMemberCount",
+                                    "EmailAddresses": [
+                                        "@body('Get_user_profile_(V2)')?['mail']"
+                                    ]
+                                },
+                                "path": "/codeless/v1.0/me/getMailTips"
+                            }
+                        },
+                        "Condition": {
+                            "actions": {
+                                "Scope": {
+                                    "actions": {
+                                        "Post_message_in_channel_about_No_Out_of_Office_On": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "recipient": {
+                                                        "groupId": "11111111-1111-1111-1111-111111111111",
+                                                        "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                    },
+                                                    "messageBody": "<p class=\"editor-paragraph\">@{triggerBody()?['object']?['properties']?['title']}, The user @{body('Get_user_profile_(V2)')?['displayName']} has no \"<i><b><strong class=\"editor-text-bold editor-text-italic\">Out of Office</strong></b></i>\" turned on.</p><br><p class=\"editor-paragraph\">Message have been sent to Manager or Region Admin to verify travel, will wait 30 minuties for response.</p>",
+                                                    "bot": "Test Bot",
+                                                    "attribution": true
+                                                },
+                                                "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('Flow bot')}/location/@{encodeURIComponent('Channel')}"
+                                            }
+                                        },
+                                        "Regional_Verification": {
+                                            "runAfter": {
+                                                "Post_message_in_channel_about_No_Out_of_Office_On": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "cases": {
+                                                "RegionA": {
+                                                    "case": "BU01 - Region A",
+                                                    "actions": {
+                                                        "Post_Option_to_RegionA_Admin": {
+                                                            "limit": {
+                                                                "timeout": "PT30M"
+                                                            },
+                                                            "type": "ApiConnectionWebhook",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "body": {
+                                                                    "notificationUrl": "@listCallbackUrl()",
+                                                                    "body": {
+                                                                        "options": [
+                                                                            "Approve",
+                                                                            "Deny"
+                                                                        ],
+                                                                        "recipient": {
+                                                                            "to": "regiona.admin@example.com",
+                                                                            "summary": "The employee @{body('Get_user_profile_(V2)')?['displayName']} triggered Impossible Travel alert please verify if you know they are working remote or activity is expected. ",
+                                                                            "isAlert": true
+                                                                        },
+                                                                        "messageBody": "@{variables('Description')}\n\nCould you please verify with @{body('Get_user_profile_(V2)')?['displayName']}  if there have been any recent travels or remote work that could explain this alert? Your prompt attention to this matter is greatly appreciated. \n\nApprove: Select this option if you are aware of the flagged activity, such as @{body('Get_user_profile_(V2)')?['displayName']} traveling or logging in from an unfamaliar location. \n\nDeny: Select this option if you are not aware of the flagged activity and suspect that it may be a result of unauthorized access. ",
+                                                                        "messageTitle": "Notice: Unusual Activity Detected for @{body('Get_user_profile_(V2)')?['displayName']}"
+                                                                    }
+                                                                },
+                                                                "path": "/flowbot/actions/messagewithoptions/recipienttypes/user/$subscriptions"
+                                                            }
+                                                        },
+                                                        "RegionA_comment": {
+                                                            "runAfter": {
+                                                                "Post_Option_to_RegionA_Admin": [
+                                                                    "Succeeded",
+                                                                    "TimedOut",
+                                                                    "Failed"
+                                                                ]
+                                                            },
+                                                            "type": "Compose",
+                                                            "inputs": "@if(contains(body('Post_Option_to_RegionA_Admin'), 'Comments'), body('Post_Option_to_RegionA_Admin')['Comments'], '')"
+                                                        },
+                                                        "RegionA_Choice": {
+                                                            "runAfter": {
+                                                                "RegionA_comment": [
+                                                                    "Succeeded",
+                                                                    "Failed"
+                                                                ]
+                                                            },
+                                                            "cases": {
+                                                                "RegionA_Deny": {
+                                                                    "case": "Deny",
+                                                                    "actions": {
+                                                                        "Region_Admin_Deny": {
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "post",
+                                                                                "body": {
+                                                                                    "recipient": {
+                                                                                        "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                                        "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                                    },
+                                                                                    "messageBody": "<p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\" style=\"color: rgb(255, 1, 1);\">Region A Admin has denied recent travel activity linked to their account. Immediate escalation and review required.</strong></b><br><br>Comments: @{outputs('RegionA_comment')}</p>"
+                                                                                },
+                                                                                "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('Flow bot')}/location/@{encodeURIComponent('Channel')}"
+                                                                            }
+                                                                        },
+                                                                        "Terminate_4": {
+                                                                            "runAfter": {
+                                                                                "Region_Admin_Deny": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "type": "Terminate",
+                                                                            "inputs": {
+                                                                                "runStatus": "Succeeded"
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "RegionA_Approve": {
+                                                                    "case": "Approve",
+                                                                    "actions": {
+                                                                        "RegionA_Admin_Approval": {
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "post",
+                                                                                "body": {
+                                                                                    "recipient": {
+                                                                                        "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                                        "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                                    },
+                                                                                    "messageBody": "<p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">Security Notification: </strong></b>Travel Activity Approved by Region A Admin</p><br><p class=\"editor-paragraph\">Region A Admin has confirmed @{body('Get_user_profile_(V2)')?['displayName']} recent travel activity as legimate. Please keep this as as a record. The Incident/Alert associated with this activity be closed automatically.</p><br><p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">Comments:</strong></b> @{outputs('RegionA_comment')}</p>"
+                                                                                },
+                                                                                "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                                                                            }
+                                                                        },
+                                                                        "Update_incident_1": {
+                                                                            "runAfter": {
+                                                                                "RegionA_Admin_Approval": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "put",
+                                                                                "body": {
+                                                                                    "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                                                    "tagsToAdd": {
+                                                                                        "TagsToAdd": [
+                                                                                            {
+                                                                                                "Tag": "Automation - Verified"
+                                                                                            }
+                                                                                        ]
+                                                                                    },
+                                                                                    "status": "Closed",
+                                                                                    "classification": {
+                                                                                        "ClassificationAndReason": "BenignPositive - SuspiciousButExpected",
+                                                                                        "ClassificationReasonText": "@{outputs('RegionA_comment')}"
+                                                                                    }
+                                                                                },
+                                                                                "path": "/Incidents"
+                                                                            }
+                                                                        },
+                                                                        "Terminate_1": {
+                                                                            "runAfter": {
+                                                                                "Update_incident_1": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "type": "Terminate",
+                                                                            "inputs": {
+                                                                                "runStatus": "Succeeded"
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "default": {
+                                                                "actions": {
+                                                                    "No_Response_from_RegionA": {
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "body": {
+                                                                                "recipient": {
+                                                                                    "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                                    "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                                },
+                                                                                "messageBody": "<p class=\"editor-paragraph\"><span style=\"color: rgb(228, 24, 24);\">Received no response from Region A Admin </span><span style=\"color: rgb(228, 24, 24);\">in the last 30 minutes, this needs to be investigated.</span></p>"
+                                                                            },
+                                                                            "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                                                                        }
+                                                                    },
+                                                                    "RegionA_no_response_Terminate": {
+                                                                        "runAfter": {
+                                                                            "No_Response_from_RegionA": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "Terminate",
+                                                                        "inputs": {
+                                                                            "runStatus": "Succeeded"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "expression": "@body('Post_Option_to_RegionA_Admin')['selectedOption']",
+                                                            "type": "Switch"
+                                                        }
+                                                    }
+                                                },
+                                                "RegionB": {
+                                                    "case": "BU02 - Region B",
+                                                    "actions": {
+                                                        "RegionB_comment": {
+                                                            "runAfter": {
+                                                                "Post_Option_to_RegionB_Admin": [
+                                                                    "Succeeded",
+                                                                    "TimedOut",
+                                                                    "Failed"
+                                                                ]
+                                                            },
+                                                            "type": "Compose",
+                                                            "inputs": "@if(contains(body('Post_Option_to_RegionB_Admin'), 'Comments'), body('Post_Option_to_RegionB_Admin')['Comments'], '')"
+                                                        },
+                                                        "Post_Option_to_RegionB_Admin": {
+                                                            "limit": {
+                                                                "timeout": "PT30M"
+                                                            },
+                                                            "type": "ApiConnectionWebhook",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "body": {
+                                                                    "notificationUrl": "@listCallbackUrl()",
+                                                                    "body": {
+                                                                        "options": [
+                                                                            "Approve",
+                                                                            "Deny"
+                                                                        ],
+                                                                        "recipient": {
+                                                                            "to": "regionb.admin@example.com",
+                                                                            "summary": "The employee @{body('Get_user_profile_(V2)')?['displayName']} triggered Impossible Travel alert please verify if you know they are working remote or activity is expected. ",
+                                                                            "isAlert": true
+                                                                        },
+                                                                        "messageBody": "@{variables('Description')}\n\nCould you please verify with @{body('Get_user_profile_(V2)')?['displayName']}  if there have been any recent travels or remote work that could explain this alert? Your prompt attention to this matter is greatly appreciated. \n\nApprove: Select this option if you are aware of the flagged activity, such as @{body('Get_user_profile_(V2)')?['displayName']} traveling or logging in from an unfamaliar location. \n\nDeny: Select this option if you are not aware of the flagged activity and suspect that it may be a result of unauthorized access. ",
+                                                                        "messageTitle": "Notice: Unusual Activity Detected for @{body('Get_user_profile_(V2)')?['displayName']}"
+                                                                    }
+                                                                },
+                                                                "path": "/flowbot/actions/messagewithoptions/recipienttypes/user/$subscriptions"
+                                                            }
+                                                        },
+                                                        "RegionB_Choice": {
+                                                            "runAfter": {
+                                                                "RegionB_comment": [
+                                                                    "Succeeded",
+                                                                    "Failed"
+                                                                ]
+                                                            },
+                                                            "cases": {
+                                                                "RegionB_Deny": {
+                                                                    "case": "Deny",
+                                                                    "actions": {
+                                                                        "RegionB_Admin_Deny": {
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "post",
+                                                                                "body": {
+                                                                                    "recipient": {
+                                                                                        "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                                        "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                                    },
+                                                                                    "messageBody": "<p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\" style=\"color: rgb(255, 1, 1);\">Region B Admin has denied recent travel activity linked to their account. Immediate escalation and review required.</strong></b><br><br>Comments: @{outputs('RegionB_comment')}</p>"
+                                                                                },
+                                                                                "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('Flow bot')}/location/@{encodeURIComponent('Channel')}"
+                                                                            }
+                                                                        },
+                                                                        "Terminate_6": {
+                                                                            "runAfter": {
+                                                                                "RegionB_Admin_Deny": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "type": "Terminate",
+                                                                            "inputs": {
+                                                                                "runStatus": "Succeeded"
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "RegionB_Approve": {
+                                                                    "case": "Approve",
+                                                                    "actions": {
+                                                                        "RegionB_Admin_Approval": {
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "post",
+                                                                                "body": {
+                                                                                    "recipient": {
+                                                                                        "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                                        "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                                    },
+                                                                                    "messageBody": "<p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">Security Notification: </strong></b>Travel Activity Approved by Region B Admin</p><br><p class=\"editor-paragraph\">Region B Admin has confirmed @{body('Get_user_profile_(V2)')?['displayName']} recent travel activity as legimate. Please keep this as as a record. The Incident/Alert associated with this activity be closed automatically.</p><br><p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">Comments:</strong></b> @{outputs('RegionB_comment')}</p>"
+                                                                                },
+                                                                                "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                                                                            }
+                                                                        },
+                                                                        "Update_incident_3": {
+                                                                            "runAfter": {
+                                                                                "RegionB_Admin_Approval": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "type": "ApiConnection",
+                                                                            "inputs": {
+                                                                                "host": {
+                                                                                    "connection": {
+                                                                                        "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                                                    }
+                                                                                },
+                                                                                "method": "put",
+                                                                                "body": {
+                                                                                    "incidentArmId": "@{triggerBody()?['object']?['id']}",
+                                                                                    "tagsToAdd": {
+                                                                                        "TagsToAdd": [
+                                                                                            {
+                                                                                                "Tag": "Automation - Verified"
+                                                                                            }
+                                                                                        ]
+                                                                                    },
+                                                                                    "status": "Closed",
+                                                                                    "classification": {
+                                                                                        "ClassificationAndReason": "BenignPositive - SuspiciousButExpected",
+                                                                                        "ClassificationReasonText": "@{outputs('RegionB_comment')}"
+                                                                                    }
+                                                                                },
+                                                                                "path": "/Incidents"
+                                                                            }
+                                                                        },
+                                                                        "Terminate_3": {
+                                                                            "runAfter": {
+                                                                                "Update_incident_3": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "type": "Terminate",
+                                                                            "inputs": {
+                                                                                "runStatus": "Succeeded"
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "default": {
+                                                                "actions": {
+                                                                    "No_Response_from_RegionB": {
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "body": {
+                                                                                "recipient": {
+                                                                                    "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                                    "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                                },
+                                                                                "messageBody": "<p class=\"editor-paragraph\"><span style=\"color: rgb(228, 24, 24);\">Recieved no response from </span><span style=\"color: rgb(228, 24, 24);\">Region B Admin</span><span style=\"color: rgb(228, 24, 24);\"> in the last 30 minutes, this needs to be investigated.</span></p>"
+                                                                            },
+                                                                            "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                                                                        }
+                                                                    },
+                                                                    "Terminate_5": {
+                                                                        "runAfter": {
+                                                                            "No_Response_from_RegionB": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "Terminate",
+                                                                        "inputs": {
+                                                                            "runStatus": "Succeeded"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "expression": "@body('Post_Option_to_RegionB_Admin')['selectedOption']",
+                                                            "type": "Switch"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "default": {
+                                                "actions": {}
+                                            },
+                                            "expression": "@body('Get_user_profile_(V2)')?['officeLocation']",
+                                            "type": "Switch"
+                                        },
+                                        "Post_a_choice_of_options_to_Manager": {
+                                            "runAfter": {
+                                                "Regional_Verification": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "limit": {
+                                                "timeout": "PT30M"
+                                            },
+                                            "type": "ApiConnectionWebhook",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                    }
+                                                },
+                                                "body": {
+                                                    "notificationUrl": "@listCallbackUrl()",
+                                                    "body": {
+                                                        "options": [
+                                                            "Approve",
+                                                            "Deny"
+                                                        ],
+                                                        "recipient": {
+                                                            "to": "@body('Get_manager_(V2)')?['mail']",
+                                                            "summary": "The employee @{body('Get_user_profile_(V2)')?['displayName']} triggered Impossible Travel alert please verify if you know they are working remote or activity is expected. ",
+                                                            "isAlert": true
+                                                        },
+                                                        "messageBody": "@{variables('Description')}\n\nCould you please verify with @{body('Get_user_profile_(V2)')?['displayName']}  if there have been any recent travels or remote work that could explain this alert? Your prompt attention to this matter is greatly appreciated. \n\nWe understand that this could be a simple misunderstanding, but we take any potential security threats very seriously to ensure the safety and integrity of our systems. \n\nThank you for your assistance. Please contact us directly with any information or if you have any questions.\n\nApprove: Select this option if you are aware of the flagged activity, such as @{body('Get_user_profile_(V2)')?['displayName']} traveling or logging in from an unfamaliar location. \n\nDeny: Select this option if you are not aware of the flagged activity and suspect that it may be a result of unauthorized access. ",
+                                                        "messageTitle": "Notice: Unusual Activity Detected for @{body('Get_user_profile_(V2)')?['displayName']}"
+                                                    }
+                                                },
+                                                "path": "/flowbot/actions/messagewithoptions/recipienttypes/user/$subscriptions"
+                                            }
+                                        },
+                                        "Manager_Comment": {
+                                            "runAfter": {
+                                                "Post_a_choice_of_options_to_Manager": [
+                                                    "Succeeded",
+                                                    "TimedOut",
+                                                    "Failed"
+                                                ]
+                                            },
+                                            "type": "Compose",
+                                            "inputs": "@if(contains(body('Post_a_choice_of_options_to_Manager'), 'Comments'), body('Post_a_choice_of_options_to_Manager')['Comments'], '')\r\n"
+                                        },
+                                        "Switch": {
+                                            "runAfter": {
+                                                "Manager_Comment": [
+                                                    "Succeeded",
+                                                    "Failed",
+                                                    "TimedOut"
+                                                ],
+                                                "Post_a_choice_of_options_to_Manager": [
+                                                    "Succeeded",
+                                                    "TimedOut",
+                                                    "Failed"
+                                                ]
+                                            },
+                                            "cases": {
+                                                "Manager_Denied": {
+                                                    "case": "Deny",
+                                                    "actions": {
+                                                        "Manager_Denial": {
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "post",
+                                                                "body": {
+                                                                    "recipient": {
+                                                                        "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                        "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                    },
+                                                                    "messageBody": "<p class=\"editor-paragraph\">@{body('Get_user_profile_(V2)')?['displayName']}<b><strong class=\"editor-text-bold\" style=\"color: rgb(255, 1, 1);\"> manager has denied recent travel activity linked to their account. Immediate escalation and review required.</strong></b><br><br>Comments: @{outputs('Manager_Comment')}</p>"
+                                                                },
+                                                                "path": "/beta/teams/conversation/message/poster/@{encodeURIComponent('Flow bot')}/location/@{encodeURIComponent('Channel')}"
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                "Manager_Approved": {
+                                                    "case": "Approve",
+                                                    "actions": {
+                                                        "Manager_Approval": {
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "post",
+                                                                "body": {
+                                                                    "recipient": {
+                                                                        "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                        "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                    },
+                                                                    "messageBody": "<p class=\"editor-paragraph\"><i><b><strong class=\"editor-text-bold editor-text-italic\">Security Notification:</strong></b></i> Travel Activity Approved by @{body('Get_manager_(V2)')?['displayName']}</p><br><p class=\"editor-paragraph\">@{body('Get_manager_(V2)')?['displayName']} has confirmed @{body('Get_user_profile_(V2)')?['displayName']} recent travel activity as legitimate. Please keep this as a record. The alert associated with this activity be closed automatically.</p><br><p class=\"editor-paragraph\"><b><strong class=\"editor-text-bold\">Comments:</strong></b> @{outputs('Manager_Comment')}</p>"
+                                                                },
+                                                                "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                                                            }
+                                                        },
+                                                        "Update_incident_Close__1": {
+                                                            "runAfter": {
+                                                                "Manager_Approval": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "put",
+                                                                "body": {
+                                                                    "incidentArmId": "@{triggerBody()?['object']?['id']}",
+                                                                    "tagsToAdd": {
+                                                                        "TagsToAdd": [
+                                                                            {
+                                                                                "Tag": "Automation - Verified"
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "status": "Closed",
+                                                                    "classification": {
+                                                                        "ClassificationAndReason": "BenignPositive - SuspiciousButExpected",
+                                                                        "ClassificationReasonText": "@{outputs('Manager_Comment')}"
+                                                                    }
+                                                                },
+                                                                "path": "/Incidents"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "default": {
+                                                "actions": {
+                                                    "No_Response_from_Manager": {
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['teams']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "body": {
+                                                                "recipient": {
+                                                                    "groupId": "11111111-1111-1111-1111-111111111111",
+                                                                    "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                                },
+                                                                "messageBody": "<p class=\"editor-paragraph\"><span style=\"color: rgb(228, 24, 24);\">Recieved no response from </span>@{body('Get_user_profile_(V2)')?['displayName']}<span style=\"color: rgb(228, 24, 24);\"> manager in the last 30 minutes, this needs to be investigated. </span></p>"
+                                                            },
+                                                            "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": "@coalesce(body('Post_a_choice_of_options_to_Manager')?['selectedOption'], 'NoResponse')",
+                                            "type": "Switch"
+                                        }
+                                    },
+                                    "type": "Scope"
+                                }
+                            },
+                            "runAfter": {
+                                "Get_Automatic_Replies_": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "For_each": {
+                                        "foreach": "@triggerBody()?['object']?['properties']?['Alerts']",
+                                        "actions": {
+                                            "Post_User_has_OOF_": {
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['teams']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "post",
+                                                    "body": {
+                                                        "recipient": {
+                                                            "groupId": "11111111-1111-1111-1111-111111111111",
+                                                            "channelId": "19:00000000000000000000000000000000@thread.skype"
+                                                        },
+                                                        "messageBody": "<p class=\"editor-paragraph\">The user @{body('Get_user_profile_(V2)')?['displayName']} email tip shows a out of office and is traveling.</p><p class=\"editor-paragraph\">OOF message: @{trim(replace(outputs('Get_Automatic_Replies_')?['message'], '\r\n\r\n', '\n'))}</p>"
+                                                    },
+                                                    "path": "/beta/teams/conversation/message/poster/Flow bot/location/@{encodeURIComponent('Channel')}"
+                                                }
+                                            },
+                                            "Update_incident_2": {
+                                                "runAfter": {
+                                                    "Post_User_has_OOF_": [
+                                                        "Succeeded"
+                                                    ]
+                                                },
+                                                "type": "ApiConnection",
+                                                "inputs": {
+                                                    "host": {
+                                                        "connection": {
+                                                            "name": "@parameters('$connections')['azuresentinel-2']['connectionId']"
+                                                        }
+                                                    },
+                                                    "method": "put",
+                                                    "body": {
+                                                        "incidentArmId": "@triggerBody()?['object']?['id']",
+                                                        "status": "Closed",
+                                                        "classification": {
+                                                            "ClassificationAndReason": "BenignPositive - SuspiciousButExpected",
+                                                            "ClassificationReasonText": "@{outputs('Get_Automatic_Replies_')}"
+                                                        }
+                                                    },
+                                                    "path": "/Incidents"
+                                                }
+                                            }
+                                        },
+                                        "type": "Foreach"
+                                    },
+                                    "Terminate_2": {
+                                        "runAfter": {
+                                            "For_each": [
+                                                "Succeeded"
+                                            ]
+                                        },
+                                        "type": "Terminate",
+                                        "inputs": {
+                                            "runStatus": "Succeeded"
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@empty(outputs('Get_mail_tips_for_a_mailbox_(V2)')?['body/value'][0]['automaticReplies'])\r\n",
+                                            true
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "User_Entity_": {
+                            "actions": {
+                                "Entities_List": {
+                                    "type": "Compose",
+                                    "inputs": "@triggerBody()?['object']?['properties']?['relatedEntities']"
+                                },
+                                "Filter_array": {
+                                    "runAfter": {
+                                        "Entities_List": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Query",
+                                    "inputs": {
+                                        "from": "@outputs('Entities_List')",
+                                        "where": "@equals(item()?['kind'], 'Account')\r\n"
+                                    }
+                                },
+                                "Compromised_User": {
+                                    "runAfter": {
+                                        "Filter_array": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Compose",
+                                    "inputs": "@first(body('Filter_array'))?['properties']?['additionalData']?['UserPrincipalName']\r\n"
+                                }
+                            },
+                            "runAfter": {
+                                "Entities_-_Get_Accounts": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Scope"
+                        },
+                        "Incident_Description": {
+                            "foreach": "@triggerBody()?['object']?['properties']?['Alerts']",
+                            "actions": {
+                                "Set_variable": {
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "Description",
+                                        "value": "@concat(join(take(split(item()?['properties']?['description'], '.'), 10), '.'), '.')"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_variables": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Description": {
+                            "runAfter": {
+                                "Incident_Description": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@variables('Description')"
+                        },
+                        "Initialize_variables": {
+                            "runAfter": {
+                                "User_Entity_": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "Description",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/centralus/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_1_externalid')]",
+                                "connectionName": "azuresentinel-1",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            },
+                            "office365users": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/centralus/managedApis/office365users",
+                                "connectionId": "[parameters('connections_office365users_1_externalid')]",
+                                "connectionName": "office365users-1",
+                                "connectionProperties": {}
+                            },
+                            "azuresentinel-2": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/centralus/managedApis/azuresentinel",
+                                "connectionId": "[parameters('connections_azuresentinel_5_externalid')]",
+                                "connectionName": "azuresentinel-5",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            },
+                            "office365": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/centralus/managedApis/office365",
+                                "connectionId": "[parameters('connections_office365_externalid')]",
+                                "connectionName": "office365",
+                                "connectionProperties": {}
+                            },
+                            "teams": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/centralus/managedApis/teams",
+                                "connectionId": "[parameters('connections_teams_externalid')]",
+                                "connectionName": "teams",
+                                "connectionProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,201 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_KnowBe4Campaigns_name": {
+            "defaultValue": "KnowBe4Campaigns",
+            "type": "String"
+        },
+        "connections_excelonlinebusiness_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/excelonlinebusiness",
+            "type": "String"
+        },
+        "connections_keyvault_externalid": {
+            "defaultValue": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/<RESOURCE_GROUP>/providers/Microsoft.Web/connections/keyvault",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_KnowBe4Campaigns_name')]",
+            "location": "northcentralus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "interval": 6,
+                                "frequency": "Month",
+                                "timeZone": "Eastern Standard Time"
+                            },
+                            "evaluatedRecurrence": {
+                                "interval": 6,
+                                "frequency": "Month",
+                                "timeZone": "Eastern Standard Time"
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "HTTP_Request": {
+                            "runAfter": {
+                                "Get_secret": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "uri": "https://us.api.knowbe4.com/v1/phishing/security_tests",
+                                "method": "GET",
+                                "headers": {
+                                    "Authorization": "Bearer @{body('Get_secret')?['value']}",
+                                    "Accept": "*/*",
+                                    "Content-Type": "application/json"
+                                }
+                            },
+                            "operationOptions": "SuppressWorkflowHeaders",
+                            "runtimeConfiguration": {
+                                "contentTransfer": {
+                                    "transferMode": "Chunked"
+                                }
+                            }
+                        },
+                        "Parse_JSON": {
+                            "runAfter": {
+                                "HTTP_Request": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('HTTP_Request')",
+                                "schema": {}
+                            }
+                        },
+                        "ClosedCampaigns": {
+                            "runAfter": {
+                                "Parse_JSON": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@body('Parse_JSON')",
+                                "where": "@equals(item()?['status'], 'Closed')"
+                            }
+                        },
+                        "SortClosedCampaigns": {
+                            "runAfter": {
+                                "ClosedCampaigns": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@sort(body('ClosedCampaigns'), 'started_at')"
+                        },
+                        "LatestCampaign": {
+                            "runAfter": {
+                                "SortClosedCampaigns": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@last(outputs('SortClosedCampaigns'))"
+                        },
+                        "Add_a_row_into_a_table": {
+                            "runAfter": {
+                                "LatestCampaign": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['excelonlinebusiness']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": {
+                                    "Status": "@outputs('LatestCampaign')?['status']",
+                                    "Name": "@outputs('LatestCampaign')?['name']",
+                                    "phish_prone_percentage": "@outputs('LatestCampaign')?['phish_prone_percentage']",
+                                    "started at": "@outputs('LatestCampaign')?['started_at']",
+                                    "duration": "@outputs('LatestCampaign')?['duration']",
+                                    "scheduled_count": "@outputs('LatestCampaign')?['scheduled_count']",
+                                    "delivered_count": "@outputs('LatestCampaign')?['delivered_count']",
+                                    "opened_count": "@outputs('LatestCampaign')?['opened_count']",
+                                    "clicked_count": "@outputs('LatestCampaign')?['clicked_count']",
+                                    "reported_count": "@outputs('LatestCampaign')?['reported_count']"
+                                },
+                                "path": "/codeless/v1.2/drives/@{encodeURIComponent('<SHAREPOINT_DRIVE_ID>')}/items/@{encodeURIComponent(encodeURIComponent('/Reports/Knowbe4Campaigns.xlsx'))}/workbook/tables/@{encodeURIComponent('{00000000-0000-0000-0000-000000000000}')}/rows",
+                                "queries": {
+                                    "source": "sites/<TENANT>.sharepoint.com,<SITE_GUID>,<WEB_GUID>"
+                                }
+                            }
+                        },
+                        "Get_secret": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['keyvault']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/secrets/@{encodeURIComponent('Knowbe4API')}/value"
+                            },
+                            "runtimeConfiguration": {
+                                "secureData": {
+                                    "properties": [
+                                        "inputs",
+                                        "outputs"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "excelonlinebusiness": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/northcentralus/managedApis/excelonlinebusiness",
+                                "connectionId": "[parameters('connections_excelonlinebusiness_externalid')]",
+                                "connectionName": "excelonlinebusiness",
+                                "connectionProperties": {}
+                            },
+                            "keyvault": {
+                                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/northcentralus/managedApis/keyvault",
+                                "connectionId": "[parameters('connections_keyvault_externalid')]",
+                                "connectionName": "keyvault",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
