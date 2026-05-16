@@ -6,9 +6,9 @@ If something here saves someone else time, that's the point.
 
 ## About
 
-I'm a tech enthusiast working in the cyber security space, interested in showcasing and sharing the problems I've solved. Most of what's here is the working version of something I built for a real environment, a Logic App that fixed a problem, a KQL query that became part of a workflow.
+I'm a tech enthusiast working in the cyber security space, interested in showcasing and sharing the problems I've solved. Most of what's here is the working version of something I built for a real environment, like a Logic App that fixed a problem or a KQL query that became part of a workflow.
 
-I'm comfortable starting before I have the full picture. A lot of these were built by figuring it out as I went, so what's published here is the working version, not a polished retrospective. The patterns are usually more reusable than the blog posts written about them, which is why the cookbook exists alongside the writeups.
+I'm comfortable starting before I have the full picture. A lot of these were built by figuring it out as I went, so what's published here is the working version with the rough edges still in it. The patterns are usually more reusable than the blog posts written about them, which is why the cookbook exists alongside the writeups.
 
 The topics here cover three things I keep coming back to:
 

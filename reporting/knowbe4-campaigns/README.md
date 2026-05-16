@@ -1,12 +1,12 @@
 # KnowBe4 Campaigns to Power BI
 
-Logic App that pulls phishing campaign data from the KnowBe4 API on a schedule and lands it in a centralized destination Power BI can read. Built so the security dashboard has the same view of training and simulation outcomes that Sentinel has of incidents, one source for program health, no manual report-pulling.
+Logic App that pulls phishing campaign data from the KnowBe4 API on a schedule and lands it in a centralized destination Power BI can read. Built so the security dashboard has the same view of training and simulation outcomes that Sentinel has of incidents. One source for program health, no manual report-pulling.
 
 Companion writeup: [Cybersecurity Power BI Dashboard](https://maplecheeze.github.io/Portfolio/portfolio/cybersecurity-powerbi-dashboard/), this Logic App is one of the data integrations behind that dashboard.
 
 ## Context
 
-KnowBe4 is a strong phishing simulation and training platform, but the data lives in its own portal. To make it actionable in a centralized security dashboard, you have to pull it out and put it somewhere the reporting layer can read. Manual export-and-paste loses fidelity, doesn't scale, and leaves the dashboard out of date most of the time.
+KnowBe4 is a strong phishing simulation and training platform, but the data lives in its own portal. To make it actionable in a centralized security dashboard, you have to pull it out and put it somewhere the reporting layer can read. Manual export-and-paste loses fidelity and doesn't scale. The dashboard ends up out of date most of the time.
 
 This pattern automates the pull. The Logic App authenticates to the KnowBe4 API, retrieves campaign and user-level data on a schedule, and writes it to a destination Power BI queries directly, so phishing simulation outcomes show up next to vulnerability and incident metrics in the same view.
 

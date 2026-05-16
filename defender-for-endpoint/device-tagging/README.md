@@ -6,7 +6,7 @@ Companion writeup: [portfolio site](https://maplecheeze.github.io/Portfolio/port
 
 ## Context
 
-Without tags, every responder looking at an alert in Defender stops to figure out what the device is and who owns it. That lookup costs time at exactly the moment time matters most. Tagging is built into Defender, included at no extra cost, and almost universally underused, usually because manual tagging doesn't scale and falls out of date within weeks.
+Without tags, every responder looking at an alert in Defender stops to figure out what the device is and who owns it. That lookup costs time at exactly the moment time matters most. Tagging is built into Defender at no extra cost and almost universally underused, usually because manual tagging doesn't scale and falls out of date within weeks.
 
 This pattern derives tags from the `Department` field already maintained in Entra ID and reconciles them weekly. The system stays accurate as users move between departments, devices come and go, and the upstream data changes.
 

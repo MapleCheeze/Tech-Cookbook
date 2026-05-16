@@ -1,6 +1,6 @@
 # Impossible Travel Detection & Response
 
-End-to-end SOAR workflow for impossible-travel sign-ins in Microsoft Sentinel. Detection fires the analytic rule, enrichment runs automatically, the workflow contacts the user, and conditional access actions are invoked or escalation happens based on the user's response and the surrounding signal, so analysts only see the cases worth their time.
+End-to-end SOAR workflow for impossible-travel sign-ins in Microsoft Sentinel. Detection fires the analytic rule and enrichment runs automatically. The workflow contacts the user, and conditional access actions or escalation follow based on the user's response and the surrounding signal. Analysts only see the cases worth their time.
 
 Companion writeup: [portfolio site](https://maplecheeze.github.io/Portfolio/portfolio/impossible-travel-workflow/)
 
@@ -8,7 +8,7 @@ Companion writeup: [portfolio site](https://maplecheeze.github.io/Portfolio/port
 
 Out-of-the-box impossible-travel alerts are some of the noisiest signals in Sentinel. VPN traffic, proxy egress, cloud-hosted clients, and legitimate travel all produce signal that looks like compromise. Triaging these manually burns analyst hours on false positives, and the genuine cases get lost in the noise.
 
-This workflow handles the routine 90% automatically, enriches the alert, contacts the user, evaluates the response, and applies conditional access when warranted, and only escalates to an analyst when signals genuinely suggest compromise.
+This workflow handles the routine 90% automatically. It enriches the alert, contacts the user, evaluates the response, and applies conditional access when warranted. Escalation to an analyst only happens when signals genuinely suggest compromise.
 
 ## Architecture
 
