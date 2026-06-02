@@ -1,6 +1,6 @@
 # Tech Cookbook
 
-A central repo for the work I've built in cyber security, privacy, and AI / ML. Sanitized templates, queries, Logic Apps, and the patterns behind them, the artifacts that go with the writeups on my [portfolio site](https://maplecheeze.github.io/Portfolio/).
+A central repo for the work I've built in cyber security, privacy, and AI / ML. Templates, queries, Logic Apps, and the patterns behind them, the artifacts that go with the writeups on my [portfolio site](https://maplecheeze.github.io/Portfolio/).
 
 If something here saves someone else time, that's the point.
 
